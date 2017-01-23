@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 from tensorflow.examples.tutorials.mnist import input_data
 import tqdm
+from functools import reduce
 
 ROWS = 28
 COLS = 28
@@ -19,7 +20,8 @@ def generator(inputs, nch=200):
             b = tf.get_variable("bias", [fanout], dtype=tf.float32,
                     initializer=tf.constant_initializer(0, dtype=tf.float32))
         activation = tf.matmul(H, W) + b
-        mean, variance = tf.nn.moments(activation, [1])
+        with tf.device("/cpu:0"):
+            mean, variance = tf.nn.moments(activation, [1])
         normalized = (activation - tf.expand_dims(mean, 1)) / tf.expand_dims(tf.sqrt(variance), 1)
         dense1 = tf.nn.relu(normalized)
     H = dense1
@@ -39,7 +41,8 @@ def generator(inputs, nch=200):
             b = tf.get_variable("bias", [fanout], dtype=tf.float32,
                     initializer=tf.constant_initializer(0, dtype=tf.float32))
         activation = tf.nn.bias_add(tf.nn.conv2d(H, W, [1, 1, 1, 1], "SAME"), b)
-        mean, variance = tf.nn.moments(activation, [1])
+        with tf.device("/cpu:0"):
+            mean, variance = tf.nn.moments(activation, [1])
         normalized = (activation - tf.expand_dims(mean, 1)) / tf.expand_dims(tf.sqrt(variance), 1)
         conv1 = tf.nn.relu(normalized)
     H = conv1
@@ -55,7 +58,8 @@ def generator(inputs, nch=200):
             b = tf.get_variable("bias", [fanout], dtype=tf.float32,
                     initializer=tf.constant_initializer(0, dtype=tf.float32))
         activation = tf.nn.bias_add(tf.nn.conv2d(H, W, [1, 1, 1, 1], "SAME"), b)
-        mean, variance = tf.nn.moments(activation, [1])
+        with tf.device("/cpu:0"):
+            mean, variance = tf.nn.moments(activation, [1])
         normalized = (activation - tf.expand_dims(mean, 1)) / tf.expand_dims(tf.sqrt(variance), 1)
         conv2 = tf.nn.relu(normalized)
     H = conv2
@@ -144,12 +148,14 @@ def graph(use_gpu=False):
             with tf.name_scope("labels"):
                 false_labels_dis = tf.one_hot(tf.fill([tf.shape(generated_images)[0]], 0), 2, on_value=1.0, off_value=0.0)
                 false_labels_gen = tf.one_hot(tf.fill([tf.shape(generated_images)[0]], 1), 2, on_value=1.0, off_value=0.0)
-            tf.summary.image("generated", generated_images) 
+            with tf.device("/cpu:0"):
+                tf.summary.image("generated", generated_images) 
         with tf.variable_scope("mnist_images"):
             with tf.name_scope("input"):
                 mnist_inputs_flat = tf.placeholder(tf.float32, [None, 784])
                 mnist_inputs = tf.reshape(mnist_inputs_flat, [tf.shape(mnist_inputs_flat)[0], 28, 28, 1])
-                tf.summary.image("actual", mnist_inputs) 
+                with tf.device("/cpu:0"):
+                    tf.summary.image("actual", mnist_inputs) 
             with tf.name_scope("labels"):
                 true_labels = tf.one_hot(tf.fill([tf.shape(mnist_inputs)[0]], 1), 2, on_value=1.0, off_value=0.0)
         with tf.name_scope("dis"):
@@ -163,12 +169,14 @@ def graph(use_gpu=False):
             generated_cross_entropy_loss_dis = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(generated_logits, false_labels_dis))
             cross_entropy_loss_dis = 0.5 * (generated_cross_entropy_loss_dis + mnist_cross_entropy_loss)
             cross_entropy_loss_gen = generated_cross_entropy_loss_gen
-            tf.summary.scalar("dis-loss", cross_entropy_loss_dis)
-            tf.summary.scalar("gen-loss", cross_entropy_loss_gen)
+            with tf.device("/cpu:0"):
+                tf.summary.scalar("dis-loss", cross_entropy_loss_dis)
+                tf.summary.scalar("gen-loss", cross_entropy_loss_gen)
             true_positive_ratio = tf.reduce_mean(tf.cast(tf.equal(mnist_prediction, 1), tf.float32))
             false_positive_ratio = tf.reduce_mean(tf.cast(tf.equal(generated_prediction, 1), tf.float32))
-            tf.summary.scalar("false-positive-rate", false_positive_ratio);
-            tf.summary.scalar("true-positive-rate", true_positive_ratio);
+            with tf.device("/cpu:0"):
+                tf.summary.scalar("false-positive-rate", false_positive_ratio);
+                tf.summary.scalar("true-positive-rate", true_positive_ratio);
     with tf.device("/cpu:0"):
         with tf.name_scope("training_dis"):
             dis_opt = tf.train.AdamOptimizer(1e-4)
@@ -185,7 +193,7 @@ def graph(use_gpu=False):
 def train():
     mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
-    train_dis, train_gen, seed_input, mnist_input = graph()
+    train_dis, train_gen, seed_input, mnist_input = graph(use_gpu=True)
     summaries = tf.summary.merge_all()
     init = tf.global_variables_initializer()
 
